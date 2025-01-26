@@ -1,0 +1,22 @@
+# FastAPI and ASGI server
+fastapi==0.109.0
+uvicorn==0.27.0
+
+# Database and ORM
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+
+# Password hashing
+passlib[bcrypt]==1.7.4
+
+# Data validation and serialization
+pydantic[email]==2.5.3  # Ensure email-validator is installed
+
+# Environment variables (optional, for production)
+python-dotenv==1.0.0
+
+# Async database support (optional, for async PostgreSQL)
+asyncpg==0.29.0
+
+# Multipart form handling
+python-multipart==0.0.6

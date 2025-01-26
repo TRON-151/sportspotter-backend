@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:16
+    container_name: postgres_sportspotter
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 12345
+      POSTGRES_DB: sportspotter
+      PGPORT: 5440 # Change the default internal port
+    ports:
+      - "5440:5440" # Map host port 5440 to the container's internal port 5440
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - sportspotter_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sportspotter"]
+      interval: 15s
+      timeout: 15s
+      retries: 5
+
+  app:
+    build: .
+    container_name: sportspotter_api
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: "postgresql+psycopg2://postgres:12345@db:5440/sportspotter"
+    ports:
+      - "8000:8000"
+    networks:
+      - sportspotter_network
+    volumes:
+      - .:/app # Optional: map the app source code for development
+    command:
+      [
+        "/wait-for-it.sh",
+        "db:5440",
+        "--timeout=30",
+        "--strict",
+        "--",
+        "uvicorn",
+        "main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+      ]
+
+volumes:
+  postgres_data:
+
+networks:
+  sportspotter_network:
+    driver: bridge
