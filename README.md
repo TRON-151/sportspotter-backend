@@ -1,6 +1,7 @@
-# FastAPI Application with PostgreSQL and GeoJSON Data
+# SPorts SPotter FastAPI Backend with PostgreSQL DB
+This project is a FastAPI application that provides user authentication, sports event management, and serves sports GeoJSON data for Muenster Germany. It uses PostgreSQL as the database and is containerized using Docker.
 
-This project is a FastAPI application that provides user authentication, sports event management, and serves GeoJSON data. It uses PostgreSQL as the database and is containerized using Docker.
+![Image of API docs landing page](api.png)
 
 ---
 
@@ -45,8 +46,8 @@ cd sportspotter-backend
 ### 2. Build and Run the Application
 Run the following command to start the FastAPI app and PostgreSQL database:
 
-```bash
-docker-compose up --build
+``` bash
+docker compose up --build
 ```
 
 This will:
@@ -54,7 +55,14 @@ This will:
 - Start a PostgreSQL container.
 - Start the FastAPI application container.
 
+ Command to stop and remove all docker containers 
+
+``` bash
+docker rm -f $(docker ps -a -q) 
+```
+
 ### 3. Access the Application
+- FastAPI docs app: `http://localhost:8000/docs`
 - FastAPI app: `http://localhost:8000`
 - PostgreSQL database: `localhost:5440`
 
@@ -63,7 +71,7 @@ This will:
 ## API Endpoints
 
 ### User Authentication
-- **Sign Up**: `POST /signup`
+- **Sign Up**: `POST /api/signup`
   - Request Body:
     ```json
     {
@@ -74,7 +82,7 @@ This will:
     }
     ```
 
-- **Login**: `POST /login`
+- **Login**: `POST /api/login`
   - Request Body:
     ```json
     {
@@ -84,7 +92,7 @@ This will:
     ```
 
 ### Sports Event Management
-- **Create Event**: `POST /events`
+- **Create Event**: `POST /api/events`
   - Request Body:
     ```json
     {
@@ -100,8 +108,10 @@ This will:
 - **Update Event**: `PUT /api/events/{event_id}`
 - **Delete Event**: `DELETE /api/events/{event_id}`
 
+- **GET ALL Events**: `GET /api/events`
+
 ### GeoJSON Data
-- **Get GeoJSON Data**: `GET /geojson`
+- **Get Sports GeoJSON Data**: `GET /api/sports_geojson`
 
 ---
 
