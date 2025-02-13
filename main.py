@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Query, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 from models import (
     SessionLocal,
@@ -32,6 +33,13 @@ app = FastAPI(
         "url": "https://choosealicense.com/licenses/mit/",
     }
     )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://127.0.0.1:5000"],  # Add your frontend URL here
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Dependency to get the database session
 def get_db():
