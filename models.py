@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, Date, Time
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, Date, Time, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from pydantic import BaseModel, EmailStr, Field
@@ -36,6 +36,7 @@ class SportsEvent(Base):
     date = Column(Date)  # Date only
     time = Column(Time)  # Time only
     tag = Column(String)  # e.g., "volleyball", "soccer"
+    created_by = Column(Integer, ForeignKey("users.id")) 
 
     def __repr__(self):
         return f"<SportsEvent(id={self.id}, title={self.title}, location={self.location})>"
@@ -80,9 +81,17 @@ class SportsEventResponse(BaseModel):
     date: date  # Date only
     time: time  # Time only
     tag: str
+    created_by: int
 
     class Config:
         from_attributes = True  # Safe serialization without triggering recursion
+
+# Response models
+class UserSignupResponse(BaseModel):
+    message: str
+    user: UserResponse
+    access_token: str
+    token_type: str        
 
 # Helper functions
 def verify_password(plain_password, hashed_password):

@@ -1,4 +1,7 @@
 from fastapi import FastAPI, Query, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
@@ -8,6 +11,7 @@ from models import (
     UserCreate,
     UserLogin,
     UserResponse,
+    UserSignupResponse,
     SportsEvent,
     SportsEventCreate,
     SportsEventUpdate,
@@ -19,6 +23,25 @@ from models import (
 )
 from pathlib import Path
 import json
+
+
+SECRET_KEY = "your-secret-key"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
+
+
+#JWT token
+def create_access_token(data: dict, expires_delta: timedelta = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)  # Default expiration time
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
 
 app = FastAPI(
     title="Sports Spotter API",
@@ -35,7 +58,7 @@ app = FastAPI(
     )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5000"],  # Add your frontend URL here
+    allow_origins=["http://localhost:5000", "http://127.0.0.1:5000"],  # Add your frontend URL here
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -82,10 +105,29 @@ def read_root():
 def get_geojson():
     return load_geojson()
 
+# Dependency to get the current user
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+
+    user = get_user_by_username(db, username=username)
+    if user is None:
+        raise credentials_exception
+    return user
 
 
 # Routes
-@app.post("/api/signup", response_model=UserResponse)
+@app.post("/api/signup", response_model= UserSignupResponse)
 def signup(user: UserCreate, db: Session = Depends(get_db)):
     # Check if passwords match
     if user.password != user.confirm_password:
@@ -114,7 +156,19 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_user)
 
-    return UserResponse.model_validate(db_user)
+    # Generate JWT token for the new user
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": db_user.username},
+        expires_delta=access_token_expires
+    )
+
+    return {
+        "message": "User created successfully",
+        "user": UserResponse.model_validate(db_user), 
+        "access_token": access_token,
+        "token_type": "bearer"
+    }
 
 @app.post("/api/login")
 def login(user: UserLogin, db: Session = Depends(get_db)):
@@ -125,6 +179,13 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
             detail="Incorrect email or password",
         )
 
+    #creating a JWT Token
+    access_token_expires = timedelta(minutes = ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data = {"sub": db_user.username},
+        expires_delta = access_token_expires
+    )
+
     # Convert SQLAlchemy object to a dictionary
     user_dict = {
         "id": db_user.id,
@@ -133,12 +194,20 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
         "is_active": db_user.is_active,
     }
 
-    return {"message": "Login successful", "user": UserResponse.model_validate(user_dict)}
+    return {
+        "message": "Login successful", 
+        "user": UserResponse.model_validate(user_dict),
+        "access_token": access_token,
+        "token_type": "bearer"}
 
 # SportsEvent routes
 @app.post("/api/events", response_model=SportsEventResponse)
-def create_event(event: SportsEventCreate, db: Session = Depends(get_db)):
-    db_event = SportsEvent(**event.dict())
+def create_event(event: SportsEventCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+
+    event_data = event.dict()
+    event_data["created_bu"] = current_user.id
+    
+    db_event = SportsEvent(**event.dict(), created_by=current_user.id)
     db.add(db_event)
     db.commit()
     db.refresh(db_event)
@@ -155,12 +224,17 @@ def read_event(event_id: int, db: Session = Depends(get_db)):
     return SportsEventResponse.model_validate(db_event)
 
 @app.put("/api/events/{event_id}", response_model=SportsEventResponse)
-def update_event(event_id: int, event: SportsEventUpdate, db: Session = Depends(get_db)):
+def update_event(event_id: int, event: SportsEventUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     db_event = db.query(SportsEvent).filter(SportsEvent.id == event_id).first()
     if not db_event:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Event not found",
+        )
+    if db_event.created_by != current_user.id:
+        raise HTTPException(
+            status_code = status.HTTP_403_FORBIDDEN,
+            detail = "You are not authorized to update this event",
         )
 
     # Update only the fields that are provided in the request
@@ -173,12 +247,17 @@ def update_event(event_id: int, event: SportsEventUpdate, db: Session = Depends(
     return SportsEventResponse.model_validate(db_event)
 
 @app.delete("/api/events/{event_id}")
-def delete_event(event_id: int, db: Session = Depends(get_db)):
+def delete_event(event_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     db_event = db.query(SportsEvent).filter(SportsEvent.id == event_id).first()
     if not db_event:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Event not found",
+        )
+    if db_event.created_by != current_user.id:
+        raise HTTPException(
+            status_code = status.HTTP_403_FORBIDDEN,
+            detail = "You are not authorized to delete this event",
         )
     db.delete(db_event)
     db.commit()
@@ -192,30 +271,37 @@ def get_all_events(
     limit: int = Query(10, description="Maximum number of items to return"),
     db: Session = Depends(get_db),
 ):
-    # Query events ordered by date (descending) and time (descending)
-    db_events = (
-        db.query(SportsEvent)
-        .order_by(SportsEvent.date.desc(), SportsEvent.time.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    try:
+        # Query events ordered by date (descending) and time (descending)
+        db_events = (
+            db.query(SportsEvent)
+            .order_by(SportsEvent.date.desc(), SportsEvent.time.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+        
+        # Convert SQLAlchemy objects to dictionaries
+        # events = [
+        #     {
+        #         "id": event.id,
+        #         "title": event.title,
+        #         "location": event.location,
+        #         "date": event.date,
+        #         "time": event.time,
+        #         "tag": event.tag,
+        #     }
+        #     for event in db_events
+        # ]
     
-    # Convert SQLAlchemy objects to dictionaries
-    events = [
-        {
-            "id": event.id,
-            "title": event.title,
-            "location": event.location,
-            "date": event.date,
-            "time": event.time,
-            "tag": event.tag,
-        }
-        for event in db_events
-    ]
-    
-    # Validate and return the list of events
-    return [SportsEventResponse.model_validate(event) for event in events]
+        # Validate and return the list of events
+        return db_events
+        # return [SportsEventResponse.model_validate(event) for event in db_events]
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail = f"Internal server error: {str(e)}"
+        )
 
 # Run the app
 if __name__ == "__main__":
